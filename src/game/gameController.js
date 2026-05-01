@@ -1,4 +1,4 @@
-﻿import { $, rand, pick, newCardId } from '../core/utils.js';
+﻿﻿import { $, rand, pick, newCardId } from '../core/utils.js';
 import { CARD_DEFS, IF_CONDITIONS, cardDisplayClass } from '../data/cards.js';
 import { CHARACTERS } from '../data/characters.js';
 import { EVENTS_LIST } from '../data/events.js';
