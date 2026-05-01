@@ -4,6 +4,7 @@ import { emptyStatus, renderStatusTags } from '../core/status.js';
 import { CARD_DEFS, IF_CONDITIONS, cardDisplayClass } from '../data/cards.js';
 import { ENEMY_UI_META } from '../data/enemies.js';
 import { PLUGIN_DEFS } from '../data/plugins.js';
+import { BattleFxStage } from './battleFxStage.js';
 
 // === BATTLE MANAGER ===
 export class BattleManager {
@@ -36,6 +37,7 @@ export class BattleManager {
     this.maxParamSum = runState.maxParamSum || 10;
     this.enemyWeakThisTurn = false;
     this.checkpointUsed = false;
+    this.fx = new BattleFxStage(document.getElementById('battle-fx-stage'));
     this.initDeck();
     this.startTurn();
   }
@@ -351,7 +353,11 @@ export class BattleManager {
           el.className = `card ${cardDisplayClass(def)}`;
           el.dataset.discardIdx=String(idx);
           el.style.cssText = 'cursor:pointer;transition:all .15s;position:relative;';
-          el.innerHTML = `<div class="card-icon">${def.icon}</div><div class="card-name">${def.name}</div><div class="card-desc">${def.desc||''}</div>`;
+          if(def.subtype==='if'||def.subtype==='if_else'){
+            el.innerHTML = `<div class="card-icon">${def.icon}</div><div class="card-name if-card-line1">如果【】则</div><div class="card-desc if-card-bonus">${this._getBonusText(def)}</div>`;
+          } else {
+            el.innerHTML = `<div class="card-icon">${def.icon}</div><div class="card-name">${def.name}</div><div class="card-desc">${def.desc||''}</div>`;
+          }
 
           if(selected.has(idx)) {
             el.style.border = '2px solid var(--red)';
@@ -442,6 +448,7 @@ export class BattleManager {
 
 
   renderEnemy() {
+    this.fx?.setEnemy(this.enemy);
     $('#enemy-sprite').textContent=this.enemy.icon;
     $('#enemy-name').textContent=this.enemy.name;
     const pct=Math.max(0,this.enemy.hp/this.enemy.maxHp*100);
@@ -899,7 +906,7 @@ export class BattleManager {
         if(slot.branch==='else'){
           const prevSlot=i>0?this.program[i-1]:null;
           if(!prevSlot||!prevSlot.branch||prevSlot.branch!=='else'){
-            const elseTag=document.createElement('span');elseTag.className='code-block syntax';elseTag.style.fontSize='10px';elseTag.style.marginRight='4px';
+            const elseTag=document.createElement('span');elseTag.className='code-block syntax';elseTag.style.marginRight='6px';
             elseTag.textContent='else:';content.appendChild(elseTag);
           }
         }
@@ -1310,12 +1317,14 @@ export class BattleManager {
         if(this.enemy.shield>0){const ab=Math.min(this.enemy.shield,dmg);this.enemy.shield-=ab;dmg-=ab;}
         this.enemy.hp-=dmg;
         ctx.hasAttacked=true;
+        this.fx?.playAttack();
+        this.fx?.playHit(val);
         this.renderEnemy();
         this.addLog(`攻击 → 敌人 -${val}`,'dmg');
         this.floatText($('#enemy-sprite'),`-${val}`,'var(--red)');$('#enemy-sprite').classList.add('shake');setTimeout(()=>$('#enemy-sprite').classList.remove('shake'),300);
       },
-      addShield:(val)=>{this.player.shield+=val;this.renderPlayer();this.addLog(`防御 → +${val} 护盾`,'shield');this.floatText($('#player-panel'),`+${val} 🛡️`,'var(--blue)');},
-      healHP:(val)=>{this.player.hp=Math.min(this.player.maxHp,this.player.hp+val);this.renderPlayer();this.addLog(`治疗 → +${val} HP`,'heal');this.floatText($('#player-panel'),`+${val} HP`,'var(--green)');},
+      addShield:(val)=>{this.player.shield+=val;this.fx?.playShield('player',val);this.renderPlayer();this.addLog(`防御 → +${val} 护盾`,'shield');this.floatText($('#player-panel'),`+${val} 🛡️`,'var(--blue)');},
+      healHP:(val)=>{this.player.hp=Math.min(this.player.maxHp,this.player.hp+val);this.fx?.playHeal('player',val);this.renderPlayer();this.addLog(`治疗 → +${val} HP`,'heal');this.floatText($('#player-panel'),`+${val} HP`,'var(--green)');},
       drawCards:(val)=>{this.drawCards(val);}
     };
     try{
@@ -1347,7 +1356,7 @@ export class BattleManager {
     }catch(err){if(err.message==='OVERFLOW')this.showBanner('栈溢出!','var(--red)');}
 
     // If enemy dead, skip discard and end battle
-    if(this.enemy.hp<=0){await delay(300);this.phase='done';this.running=false;this.onBattleEnd(true);return;}
+    if(this.enemy.hp<=0){this.fx?.playDeath();await delay(300);this.phase='done';this.running=false;this.onBattleEnd(true);return;}
 
     // 运维: 回合结束获得3护盾
     if(this.run.character==='ops'){
@@ -1371,7 +1380,7 @@ export class BattleManager {
     await delay(200);
     await this.enemyTurn();
     this.running=false;
-    if(this.enemy.hp<=0){this.phase='done';this.onBattleEnd(true);return;}
+    if(this.enemy.hp<=0){this.fx?.playDeath();this.phase='done';this.onBattleEnd(true);return;}
     if(this._checkPlayerDeath()){this.phase='done';this.onBattleEnd(false);return;}
     this.startTurn();
   }
@@ -1451,6 +1460,7 @@ export class BattleManager {
       const bd=this.enemy.status.burn;
       this.enemy.hp-=bd;
       this.addLog(`燃烧 → 敌人 -${bd}`,'dmg');
+      this.fx?.playHit(bd,0xf0883e);
       this.floatText($('#enemy-sprite'),`🔥-${bd}`,'var(--red)');
       this.enemy.status.burn--;
       this.renderEnemy(); await delay(400);
@@ -1473,10 +1483,12 @@ export class BattleManager {
       if(this.enemy.status.weaken>0) dmg=Math.max(0,dmg-this.enemy.status.weaken);
       if(this.enemyWeakThisTurn) dmg=Math.floor(dmg*0.7);
       let reflected=0;
-      if(this.player.status.reflect>0){reflected=Math.min(this.player.status.reflect,dmg);this.player.status.reflect-=reflected;this.enemy.hp-=reflected;this.addLog(`反弹 → 敌人 -${reflected}`,'shield');this.floatText($('#enemy-sprite'),`反弹-${reflected}`,'var(--blue)');}
+      if(this.player.status.reflect>0){reflected=Math.min(this.player.status.reflect,dmg);this.player.status.reflect-=reflected;this.enemy.hp-=reflected;this.fx?.playHit(reflected,0x58a6ff);this.addLog(`反弹 → 敌人 -${reflected}`,'shield');this.floatText($('#enemy-sprite'),`反弹-${reflected}`,'var(--blue)');}
       dmg-=reflected;if(dmg<0)dmg=0;
       if(this.player.shield>0){const ab=Math.min(this.player.shield,dmg);this.player.shield-=ab;dmg-=ab;}
       this.player.hp-=dmg;
+      this.fx?.playEnemyAttack();
+      this.fx?.playPlayerHit(intent.val);
       this.addLog(`敌人攻击 → 你 -${intent.val}`,'dmg');
       this.floatText($('#player-panel'),`-${intent.val}`,'var(--red)');
       document.body.classList.add('screen-shake');
@@ -1484,6 +1496,7 @@ export class BattleManager {
     } else if(intent.type==='buff'){
       this.enemy.shield+=(intent.val||10);
       if(intent.totalShield) this.enemy.shield+=intent.totalShield;
+      this.fx?.playShield('enemy',intent.val||10);
       this.addLog(`敌人防御 +${intent.val} 护盾`,'shield');
       this.floatText($('#enemy-sprite'),`+${intent.val} 🛡️`,'var(--blue)');
     } else if(intent.type==='debuff'){
@@ -1492,6 +1505,7 @@ export class BattleManager {
       this.floatText($('#player-panel'),intent.desc,'var(--purple)');
     } else if(intent.type==='heal'){
       this.enemy.hp=Math.min(this.enemy.maxHp,this.enemy.hp+intent.val);
+      this.fx?.playHeal('enemy',intent.val);
       this.addLog(`敌人治疗 +${intent.val} HP`,'heal');
       this.floatText($('#enemy-sprite'),`+${intent.val} HP`,'var(--green)');
     }
@@ -1500,6 +1514,7 @@ export class BattleManager {
       const pd=this.enemy.status.poison;
       this.enemy.hp-=pd;
       this.addLog(`中毒 → 敌人 -${pd}`,'dmg');
+      this.fx?.playHit(pd,0x3fb950);
       this.floatText($('#enemy-sprite'),`🧪-${pd}`,'var(--green)');
       this.enemy.status.poison--;
       if(this.enemy.hp<=0){this.renderEnemy();return;}
@@ -1521,5 +1536,10 @@ export class BattleManager {
   showBanner(text,color) {
     const el=document.createElement('div');el.className='turn-banner';el.textContent=text;el.style.color=color;el.style.textShadow=`0 0 30px ${color}`;
     document.body.appendChild(el);setTimeout(()=>el.remove(),900);
+  }
+
+  destroy() {
+    this.fx?.destroy();
+    this.fx = null;
   }
 }

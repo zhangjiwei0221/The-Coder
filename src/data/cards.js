@@ -21,12 +21,12 @@ export const CARD_DEFS = {
   for_loop:{type:'instruction',name:'循环()',icon:'🔁',desc:'循环执行N次',subtype:'for',needsParam:true,rarity:1,capacity:2},
   for_accel:{type:'instruction',name:'循环()×加速',icon:'🔁',desc:'循环N次,每次+1',subtype:'for_accel',needsParam:true,rarity:2,capacity:2},
   for_double:{type:'instruction',name:'循环()×双倍',icon:'🔁',desc:'循环N次,每个指令执行两次',subtype:'for_double',needsParam:true,rarity:3,capacity:2},
-  if_atk2:{type:'instruction',name:'如果{×2}...则·攻击型',icon:'⚔️',desc:'攻击翻倍',subtype:'if',bonus:{type:'mul',val:2},capacity:1,needsParam:false,rarity:1},
-  if_def2:{type:'instruction',name:'如果{×2}...则·防守型',icon:'🛡️',desc:'防御翻倍',subtype:'if',bonus:{type:'mul',val:2},capacity:1,needsParam:false,rarity:1},
-  if_bal2:{type:'instruction',name:'如果{+5}...则·均衡型',icon:'⚖️',desc:'效果+5',subtype:'if',bonus:{type:'add',val:5},capacity:1,needsParam:false,rarity:2},
-  if_hunter3:{type:'instruction',name:'如果{×2}...则·猎手',icon:'🎯',desc:'猎杀翻倍',subtype:'if',bonus:{type:'mul',val:2},capacity:1,needsParam:false,rarity:3},
-  if_plus5:{type:'instruction',name:'如果{+5}...则·通用',icon:'➕',desc:'效果+5',subtype:'if',bonus:{type:'add',val:5},capacity:2,needsParam:false,rarity:1},
-  if_gambler5:{type:'instruction',name:'如果{+5}...则·赌徒',icon:'🎰',desc:'效果+5',subtype:'if',bonus:{type:'add',val:5},capacity:1,needsParam:false,rarity:3},
+  if_atk2:{type:'instruction',name:'如果{×2}...则',icon:'✖️',desc:'效果×2',subtype:'if',bonus:{type:'mul',val:2},capacity:1,needsParam:false,rarity:1},
+  if_def2:{type:'instruction',name:'如果{×2}...则',icon:'✖️',desc:'效果×2',subtype:'if',bonus:{type:'mul',val:2},capacity:1,needsParam:false,rarity:1,draftable:false},
+  if_bal2:{type:'instruction',name:'如果{+5}...则',icon:'➕',desc:'效果+5',subtype:'if',bonus:{type:'add',val:5},capacity:1,needsParam:false,rarity:2},
+  if_hunter3:{type:'instruction',name:'如果{×2}...则',icon:'✖️',desc:'效果×2',subtype:'if',bonus:{type:'mul',val:2},capacity:1,needsParam:false,rarity:3},
+  if_plus5:{type:'instruction',name:'如果{+5}...则',icon:'➕',desc:'效果+5',subtype:'if',bonus:{type:'add',val:5},capacity:2,needsParam:false,rarity:1},
+  if_gambler5:{type:'instruction',name:'如果{+5}...则',icon:'➕',desc:'效果+5',subtype:'if',bonus:{type:'add',val:5},capacity:1,needsParam:false,rarity:3},
   // PARAMETERS
   p1:{type:'parameter',name:'1',icon:'1',value:1,rarity:1},p2:{type:'parameter',name:'2',icon:'2',value:2,rarity:1},
   p3:{type:'parameter',name:'3',icon:'3',value:3,rarity:1},p4:{type:'parameter',name:'4',icon:'4',value:4,rarity:1},
@@ -45,4 +45,3 @@ export const IF_CONDITIONS = [
 
 // Initial deck: Instructions(8, including for/if) + Parameters(8) = 16 cards
 export const STARTER_DECK = ['atk','atk','atk','def','def','for_loop','for_loop','if_atk2','p2','p2','p3','p3','p3','p4','p4','p5'];
-

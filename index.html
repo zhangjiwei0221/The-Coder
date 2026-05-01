@@ -1,14 +1,40 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>The Coder</title>
+<title>心智后台</title>
 <link href="https://fonts.font.im/css2?family=JetBrains+Mono:wght@400;600;700;800&family=Orbitron:wght@700;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<!-- TITLE --><div id="screen-title" class="screen"><h1>THE CODER</h1><div class="subtitle">像写代码一样打牌，看着自己的程序击败敌人</div><button onclick="Game.startRun()">开始游戏</button></div>
+<!-- TITLE --><div id="screen-title" class="screen">
+  <div class="title-bg" aria-hidden="true"></div>
+  <div class="title-vignette" aria-hidden="true"></div>
+  <div class="title-fog title-fog-left" aria-hidden="true"></div>
+  <div class="title-fog title-fog-right" aria-hidden="true"></div>
+  <div class="title-scene">
+    <div class="title-monitor-ui">
+      <div class="title-screen-noise"></div>
+      <div class="title-screen-grid"></div>
+      <div class="title-screen-content">
+        <div class="title-screen-status">03:17 AM / MIND BACKEND</div>
+        <h1>心智后台</h1>
+        <div class="subtitle">深夜调试失控的 bug 时，你坠入了自己的心智后台。</div>
+        <div class="title-menu">
+          <button class="title-menu-primary" onclick="Game.startRun()">开始调试</button>
+          <button class="title-menu-secondary" onclick="Game.toggleTitleLore()">梦境档案</button>
+          <button class="title-menu-secondary" disabled>继续下潜</button>
+        </div>
+      </div>
+      <div id="title-lore-panel" class="title-lore-panel hidden">
+        <div class="title-lore-heading">核心设定</div>
+        <p>敌人是焦虑与创伤的具象，代码是你唯一还能组织世界的方式。</p>
+        <p>每一次构筑程序，都是在调试自己。</p>
+      </div>
+    </div>
+  </div>
+</div>
 <!-- MAP --><div id="screen-map" class="screen hidden"><div id="map-header"><h2>// 选择路径</h2><div id="map-player-info"><span>HP: <span id="map-hp" class="hp-val"></span></span><span>金币: <span id="map-gold" class="gold-val"></span></span></div></div><div id="map-layer-name"></div><div id="map-container"></div></div>
 <!-- BATTLE --><div id="screen-battle" class="screen hidden">
 <div id="battle-top">
@@ -19,6 +45,7 @@
       <div class="enemy-intent" id="enemy-intent"></div>
     </div>
     <div id="enemy-center-panel">
+      <div id="battle-fx-stage" aria-hidden="true"></div>
       <div id="enemy-area">
         <div class="enemy-sprite" id="enemy-sprite"></div>
         <div class="enemy-info-col">
@@ -41,7 +68,16 @@
 <!-- REWARD --><div id="screen-reward" class="screen hidden"><h2>// 选择奖励</h2><div id="reward-cards"></div><button id="btn-skip-reward" onclick="Game.skipReward()">跳过</button></div>
 <!-- EVENT --><div id="screen-event" class="screen hidden"><div class="event-icon" id="event-icon"></div><h2 id="event-title"></h2><div class="event-desc" id="event-desc"></div><div id="event-choices"></div></div>
 <!-- GAME OVER --><div id="screen-gameover" class="screen hidden"><h2 id="gameover-title"></h2><div class="stats" id="gameover-stats"></div><button onclick="Game.backToTitle()">返回主界面</button></div>
-<!-- CHAR SELECT --><div id="screen-charselect" class="screen hidden"><h2 style="font-family:'Orbitron';color:var(--blue)">// 选择角色</h2><div id="char-cards" style="display:flex;gap:16px;flex-wrap:wrap;justify-content:center;"></div></div>
+<!-- CHAR SELECT --><div id="screen-charselect" class="screen hidden">
+  <div class="charselect-shell">
+    <div class="charselect-head">
+      <div class="charselect-status">USER PROFILE / CHARACTER BINDING</div>
+      <h2>// 选择角色</h2>
+      <div class="charselect-subtitle">从你的心智切片中，选择这一次负责接管系统的人格模块。</div>
+    </div>
+    <div id="char-cards" class="char-card-grid"></div>
+  </div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/phaser@3.90.0/dist/phaser.min.js"></script>
 <script type="module" src="src/main.js"></script>
