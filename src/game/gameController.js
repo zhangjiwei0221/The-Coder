@@ -86,7 +86,10 @@ export const Game = {
     const container=$('#char-cards'); container.innerHTML='';
     Object.entries(CHARACTERS).forEach(([key,ch])=>{
       const card=document.createElement('div'); card.className='char-card';
-      card.innerHTML=`<div class="char-icon">${ch.icon}</div><div class="char-copy"><div class="char-name-row"><div class="char-name">${ch.name}</div><div class="char-tag">人格模块</div></div><div class="char-ability">${ch.ability}</div><div class="char-desc">${ch.abilityDesc}</div></div>`;
+      const visual = ch.portrait
+        ? `<img class="char-portrait" src="${ch.portrait}" alt="${ch.name}">`
+        : ch.icon;
+      card.innerHTML=`<div class="char-icon">${visual}</div><div class="char-copy"><div class="char-name-row"><div class="char-name">${ch.name}</div><div class="char-tag">人格模块</div></div><div class="char-ability">${ch.ability}</div><div class="char-desc">${ch.abilityDesc}</div></div>`;
       card.addEventListener('click',()=>this.selectCharacter(key));
       container.appendChild(card);
     });
@@ -603,4 +606,3 @@ export const Game = {
 
   backToTitle() { this.showScreen('title'); },
 };
-

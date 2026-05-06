@@ -53,7 +53,7 @@ export const MapGenerator = {
       id: `f${floor}-boss`,
       type: 'boss',
       icon: ['☠️', '🔥', '💀'][floor] || '💀',
-      label: ['SyntaxError', 'Firewall', 'Root'][floor] || 'Boss',
+      label: ['红字审判', 'Firewall', 'Root'][floor] || 'Boss',
       col: numCols,
       y: 0.5,
       nextIds: [],
@@ -213,14 +213,14 @@ export const MapGenerator = {
     if (node.label === '教学') return ENEMIES.bug;
     if (node.type === 'elite') {
       const elites = [
-        ['nullptr', 'infloop'],
+        ['nullptr', 'chaser', 'todo'],
         ['recursion', 'deadlock', 'stackoverflow'],
         ['deadlock', 'racecond', 'gc'],
       ];
       return ENEMIES[pick(elites[floor] || elites[0])];
     }
     const regular = [
-      ['bug', 'typo', 'nullptr'],
+      ['bug', 'typo', 'redpoint', 'nullptr', 'chaser', 'todo'],
       ['infloop', 'memleak', 'racecond', 'gc'],
       ['stackoverflow', 'recursion', 'deadlock'],
     ];

@@ -36,6 +36,7 @@ export class BattleManager {
     this.usedParamSum = 0;
     this.maxParamSum = runState.maxParamSum || 10;
     this.enemyWeakThisTurn = false;
+    this.drawPenaltyNextTurn = { instruction:0, parameter:0, any:0 };
     this.checkpointUsed = false;
     this.fx = new BattleFxStage(document.getElementById('battle-fx-stage'));
     this.initDeck();
@@ -226,10 +227,16 @@ export class BattleManager {
   }
 
   drawHandRetention() {
+    const penalty = this.drawPenaltyNextTurn || { instruction:0, parameter:0, any:0 };
     const quotas = {
-      instruction: (this.run.handQuotas?.instruction ?? HAND_QUOTAS.instruction) + (this.hasPlugin('debugger')?1:0),
-      parameter: this.run.handQuotas?.parameter ?? HAND_QUOTAS.parameter,
+      instruction: Math.max(0, (this.run.handQuotas?.instruction ?? HAND_QUOTAS.instruction) + (this.hasPlugin('debugger')?1:0) - (penalty.instruction||0)),
+      parameter: Math.max(0, (this.run.handQuotas?.parameter ?? HAND_QUOTAS.parameter) - (penalty.parameter||0)),
     };
+    for(let i=0;i<(penalty.any||0);i++){
+      if(quotas.instruction>=quotas.parameter && quotas.instruction>0) quotas.instruction--;
+      else if(quotas.parameter>0) quotas.parameter--;
+    }
+    this.drawPenaltyNextTurn = { instruction:0, parameter:0, any:0 };
     const drawnInstr=this._drawFromPile('instruction',quotas.instruction);
     const drawnParam=this._drawFromPile('parameter',quotas.parameter);
     this.hand.push(...drawnInstr);
@@ -435,8 +442,11 @@ export class BattleManager {
     this.currentIntent=intent;
     const codeText=this.formatCodeSyntax(intent.code||('攻击['+intent.val+']'));
     let display=`本回合代码:\n${codeText}`;
-    if(intent.type==='atk'){display+=`\n预计伤害: ${intent.totalDmg||intent.val}`;}
-    else if(intent.type==='buff'||intent.type==='heal'){display+=`\n效果: ${intent.desc}`;}
+    if(intent.type==='atk'){
+      display+=`\n预计伤害: ${intent.totalDmg||intent.val}`;
+      if(intent.totalShield) display+=`\n预计护盾: ${intent.totalShield}`;
+    }
+    else if(intent.type==='buff'||intent.type==='heal'||intent.type==='debuff'){display+=`\n效果: ${intent.desc}`;}
     $('#enemy-intent').textContent=display;
   }
 
@@ -1493,6 +1503,12 @@ export class BattleManager {
       this.floatText($('#player-panel'),`-${intent.val}`,'var(--red)');
       document.body.classList.add('screen-shake');
       setTimeout(()=>document.body.classList.remove('screen-shake'),200);
+      if(intent.totalShield){
+        this.enemy.shield+=intent.totalShield;
+        this.fx?.playShield('enemy',intent.totalShield);
+        this.addLog(`敌人防御 +${intent.totalShield} 护盾`,'shield');
+        this.floatText($('#enemy-sprite'),`+${intent.totalShield} 🛡️`,'var(--blue)');
+      }
     } else if(intent.type==='buff'){
       this.enemy.shield+=(intent.val||10);
       if(intent.totalShield) this.enemy.shield+=intent.totalShield;
@@ -1500,7 +1516,12 @@ export class BattleManager {
       this.addLog(`敌人防御 +${intent.val} 护盾`,'shield');
       this.floatText($('#enemy-sprite'),`+${intent.val} 🛡️`,'var(--blue)');
     } else if(intent.type==='debuff'){
-      if(this.hand.length>0){const ri=rand(0,this.hand.length-1);this.hand.splice(ri,1);}
+      if(intent.drawPenalty){
+        this.drawPenaltyNextTurn.instruction += intent.drawPenalty.instruction || 0;
+        this.drawPenaltyNextTurn.parameter += intent.drawPenalty.parameter || 0;
+        this.drawPenaltyNextTurn.any += intent.drawPenalty.any || 0;
+      }
+      if((intent.val||0)>0&&this.hand.length>0){const ri=rand(0,this.hand.length-1);this.hand.splice(ri,1);}
       this.addLog(`敌人施法: ${intent.desc}`,'info');
       this.floatText($('#player-panel'),intent.desc,'var(--purple)');
     } else if(intent.type==='heal'){
