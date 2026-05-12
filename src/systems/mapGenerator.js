@@ -220,7 +220,7 @@ export const MapGenerator = {
       return ENEMIES[pick(elites[floor] || elites[0])];
     }
     const regular = [
-      ['bug', 'typo', 'redpoint', 'nullptr', 'chaser', 'todo'],
+      ['bug', 'typo', 'redpoint'],
       ['infloop', 'memleak', 'racecond', 'gc'],
       ['stackoverflow', 'recursion', 'deadlock'],
     ];

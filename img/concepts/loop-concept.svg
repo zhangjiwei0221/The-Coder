@@ -1,0 +1,84 @@
+<svg width="768" height="768" viewBox="0 0 768 768" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="768" height="768" fill="#071018"/>
+  <defs>
+    <radialGradient id="coreGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#8FF6FF" stop-opacity="0.88"/>
+      <stop offset="38%" stop-color="#22B8D8" stop-opacity="0.32"/>
+      <stop offset="100%" stop-color="#071018" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="cyanStroke" x1="164" y1="176" x2="604" y2="592" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7DF9FF"/>
+      <stop offset="0.5" stop-color="#4C7DFF"/>
+      <stop offset="1" stop-color="#B875FF"/>
+    </linearGradient>
+    <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="hardGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <circle cx="384" cy="384" r="270" fill="url(#coreGlow)" opacity="0.45"/>
+  <circle cx="384" cy="384" r="236" stroke="#1A3340" stroke-width="2" stroke-dasharray="5 14"/>
+
+  <g opacity="0.55" font-family="Consolas, monospace" font-size="23" fill="#5AD7FF">
+    <text x="118" y="164">for(i=0;i&lt;n;i++)</text>
+    <text x="520" y="214">while(true)</text>
+    <text x="96" y="586">{ repeat }</text>
+    <text x="510" y="618">i++</text>
+    <text x="174" y="662">loop()</text>
+  </g>
+
+  <g filter="url(#softGlow)">
+    <path d="M236 377C236 285 302 218 391 218C468 218 518 256 553 314" stroke="url(#cyanStroke)" stroke-width="28" stroke-linecap="round"/>
+    <path d="M532 283L573 356L490 353" stroke="#7DF9FF" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M532 391C532 483 466 550 377 550C300 550 250 512 215 454" stroke="url(#cyanStroke)" stroke-width="28" stroke-linecap="round"/>
+    <path d="M236 485L195 412L278 415" stroke="#B875FF" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <g filter="url(#hardGlow)">
+    <path d="M314 284C349 256 419 256 454 284L493 333C517 363 517 405 493 435L454 484C419 512 349 512 314 484L275 435C251 405 251 363 275 333L314 284Z" fill="#0D1D2A" stroke="#7DF9FF" stroke-width="5"/>
+    <path d="M331 317C357 299 411 299 437 317L464 348C480 368 480 400 464 420L437 451C411 469 357 469 331 451L304 420C288 400 288 368 304 348L331 317Z" fill="#10263A" stroke="#4C7DFF" stroke-width="3"/>
+    <circle cx="384" cy="384" r="42" fill="#06141F" stroke="#B875FF" stroke-width="4"/>
+    <circle cx="384" cy="384" r="18" fill="#9AFBFF"/>
+  </g>
+
+  <g stroke="#7DF9FF" stroke-width="3" stroke-linecap="round" opacity="0.8">
+    <path d="M314 284L267 235"/>
+    <path d="M454 284L501 235"/>
+    <path d="M314 484L267 533"/>
+    <path d="M454 484L501 533"/>
+  </g>
+  <g fill="#10263A" stroke="#7DF9FF" stroke-width="3" filter="url(#hardGlow)">
+    <rect x="232" y="203" width="70" height="44" rx="7"/>
+    <rect x="466" y="203" width="70" height="44" rx="7"/>
+    <rect x="232" y="521" width="70" height="44" rx="7"/>
+    <rect x="466" y="521" width="70" height="44" rx="7"/>
+  </g>
+  <g fill="#99F8FF" font-family="Consolas, monospace" font-size="22" text-anchor="middle">
+    <text x="267" y="232">i</text>
+    <text x="501" y="232">n</text>
+    <text x="267" y="550">++</text>
+    <text x="501" y="550">!</text>
+  </g>
+
+  <g opacity="0.9">
+    <path d="M174 314H235" stroke="#4C7DFF" stroke-width="4" stroke-linecap="round"/>
+    <path d="M594 454H533" stroke="#B875FF" stroke-width="4" stroke-linecap="round"/>
+    <path d="M152 414H212" stroke="#7DF9FF" stroke-width="3" stroke-linecap="round"/>
+    <path d="M616 354H556" stroke="#7DF9FF" stroke-width="3" stroke-linecap="round"/>
+  </g>
+
+  <g font-family="Consolas, monospace" font-size="36" fill="#D9FBFF" text-anchor="middle" filter="url(#hardGlow)">
+    <text x="384" y="706">回环</text>
+  </g>
+</svg>
