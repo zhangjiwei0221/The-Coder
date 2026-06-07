@@ -23,7 +23,8 @@ export class BattleManager {
     // Two draw/discard piles: instruction (includes for/if) and parameter
     this.instructionDrawPile = []; this.instructionDiscardPile = [];
     this.paramDrawPile = []; this.paramDiscardPile = [];
-    this.chargeNext = false;
+    this.chargeDamageNextTurn = false;
+    this.chargeDamageThisTurn = false;
     this.running = false;
     this.selectedCard = null;
     this.selectedProgramLine = null;
@@ -39,6 +40,21 @@ export class BattleManager {
     this.drawPenaltyNextTurn = { instruction:0, parameter:0, any:0 };
     this.checkpointUsed = false;
     this.fx = new BattleFxStage(document.getElementById('battle-fx-stage'));
+    this._activeGameDrag = false;
+    this._globalDragOver = e => {
+      if(!this._activeGameDrag) return;
+      e.preventDefault();
+      this._setDropMove(e);
+    };
+    this._globalDragDrop = e => {
+      if(!this._activeGameDrag) return;
+      e.preventDefault();
+      this._endGameDrag();
+    };
+    this._globalDragCleanup = () => this._endGameDrag();
+    window.addEventListener('dragover', this._globalDragOver, true);
+    window.addEventListener('dragend', this._globalDragCleanup, true);
+    window.addEventListener('drop', this._globalDragDrop, true);
     this.initDeck();
     this.startTurn();
   }
@@ -55,24 +71,41 @@ export class BattleManager {
     const dp = type==='instruction'?'instructionDrawPile':'paramDrawPile';
     const drawn=[];
     for(let i=0;i<n;i++){
+      if(!this[dp].length) this._reshufflePile(type);
       if(!this[dp].length) break; // pile empty, can't draw more
       drawn.push(this[dp].shift());
     }
     return drawn;
   }
 
-  _reshufflePiles() {
-    // Merge discard into draw pile and shuffle (at turn start)
-    this.instructionDrawPile = shuffle([...this.instructionDrawPile, ...this.instructionDiscardPile]);
-    this.instructionDiscardPile = [];
-    this.paramDrawPile = shuffle([...this.paramDrawPile, ...this.paramDiscardPile]);
-    this.paramDiscardPile = [];
+  _reshufflePile(type) {
+    const dp = type==='instruction'?'instructionDrawPile':'paramDrawPile';
+    const disc = type==='instruction'?'instructionDiscardPile':'paramDiscardPile';
+    if(this[dp].length||!this[disc].length) return;
+    this[dp]=shuffle(this[disc]);
+    this[disc]=[];
+    this.addLog(`${type==='instruction'?'指令':'参数'}弃牌堆洗回抽牌堆`,'info');
   }
 
   _discardCard(card) {
     const t=CARD_DEFS[card.defId].type;
     if(t==='instruction') this.instructionDiscardPile.push(card);
     else this.paramDiscardPile.push(card);
+  }
+
+  _discardRandomHandCardByEnemy() {
+    if(!this.hand.length) return null;
+    const idx=rand(0,this.hand.length-1);
+    const [card]=this.hand.splice(idx,1);
+    this._discardCard(card);
+    this.selectedCard=null;
+    this.selectedProgramLine=null;
+    this.closeIfPreviewPopover();
+    this.closeConditionPicker();
+    this.renderProgram();
+    this.renderHand();
+    this.renderPlayer();
+    return card;
   }
 
   _resolveEase(name) {
@@ -226,21 +259,34 @@ export class BattleManager {
     setTimeout(()=>content.classList.remove(cls),220);
   }
 
-  drawHandRetention() {
+  getNextTurnDrawQuotas() {
     const penalty = this.drawPenaltyNextTurn || { instruction:0, parameter:0, any:0 };
     const quotas = {
       instruction: Math.max(0, (this.run.handQuotas?.instruction ?? HAND_QUOTAS.instruction) + (this.hasPlugin('debugger')?1:0) - (penalty.instruction||0)),
       parameter: Math.max(0, (this.run.handQuotas?.parameter ?? HAND_QUOTAS.parameter) - (penalty.parameter||0)),
     };
+    if(this.turn===1 && this.run.nextBattleBoost){
+      quotas.instruction += this.run.nextBattleBoost.instruction || 0;
+      quotas.parameter += this.run.nextBattleBoost.parameter || 0;
+    }
     for(let i=0;i<(penalty.any||0);i++){
       if(quotas.instruction>=quotas.parameter && quotas.instruction>0) quotas.instruction--;
       else if(quotas.parameter>0) quotas.parameter--;
     }
+    return quotas;
+  }
+
+  drawHandRetention() {
+    const quotas = this.getNextTurnDrawQuotas();
     this.drawPenaltyNextTurn = { instruction:0, parameter:0, any:0 };
     const drawnInstr=this._drawFromPile('instruction',quotas.instruction);
     const drawnParam=this._drawFromPile('parameter',quotas.parameter);
     this.hand.push(...drawnInstr);
     this.hand.push(...drawnParam);
+    if(this.turn===1 && this.run.nextBattleBoost){
+      this.addLog('预编译: 首回合额外抽牌','info');
+      this.run.nextBattleBoost = null;
+    }
     return [...drawnInstr,...drawnParam].map(c=>c.id);
   }
 
@@ -263,6 +309,8 @@ export class BattleManager {
     this.turn++;
     this.phase='player';
     this.enemyWeakThisTurn=false;
+    this.chargeDamageThisTurn=this.chargeDamageNextTurn;
+    this.chargeDamageNextTurn=false;
     // Shield handling
     if(this.hasPlugin('powermgmt')){this.player.shield=Math.floor(this.player.shield*0.5);}
     else{
@@ -291,18 +339,15 @@ export class BattleManager {
     this.usedParamSum=0;
     this.selectedCard=null;
     this.selectedProgramLine=null;
-    // Merge discard piles into draw piles and shuffle
-    this._reshufflePiles();
     // Draw to fill quotas
     let drawnIds=this.drawHandRetention();
-    // 架构师: 首回合先抽1张【循环】
+    // Default demo loadout: first turn prioritizes one loop card.
     if(this.turn===1 && this.run.character==='architect'){
       const forIdx = this.instructionDrawPile.findIndex(c=>{ const d=CARD_DEFS[c.defId]; return d&&(d.subtype==='for'||d.subtype==='for_accel'||d.subtype==='for_double'); });
       if(forIdx!==-1){
         const forCard = this.instructionDrawPile.splice(forIdx,1)[0];
         this.hand.push(forCard);
         drawnIds.push(forCard.id);
-        this.addLog('架构师: 首回合抽取【循环】卡','info');
       }
     }
     // Plugin: preload — first turn draw +2
@@ -333,7 +378,7 @@ export class BattleManager {
 
       const title = document.createElement('div');
       title.style.cssText = 'font-family:Orbitron,sans-serif;font-size:18px;color:var(--yellow);letter-spacing:2px;';
-      title.textContent = '// 选择要弃掉的牌';
+      title.textContent = '选择要弃掉的牌';
       overlay.appendChild(title);
 
       const subtitle = document.createElement('div');
@@ -421,9 +466,12 @@ export class BattleManager {
     if(!node || node.childOf!==undefined) return;
     const def=CARD_DEFS[node.defId];
     if(def.consume && this.hasPlugin('gc_plugin') && Math.random()<0.4){
-      // gc_plugin: consume card saved
+      // gc_plugin: keeps a battle-removed card in the discard pile.
       this._discardCard({id:node.id,defId:node.defId});
       return;
+    }
+    if(def.consume){
+      this.addLog(`${def.name} → 本战移出`,'info');
     }
     if(!def.consume) this._discardCard({id:node.id,defId:node.defId});
     if(node.param!=null){const pId='p'+node.param;if(CARD_DEFS[pId])this._discardCard({id:newCardId(),defId:pId});}
@@ -438,12 +486,14 @@ export class BattleManager {
   }
 
   showIntent() {
-    const intent=this.enemy.getIntent(this.turn);
+    const intent=this.enemy.getIntent(this.turn,this.enemy,this.player);
     this.currentIntent=intent;
     const codeText=this.formatCodeSyntax(intent.code||('攻击['+intent.val+']'));
     let display=`本回合代码:\n${codeText}`;
     if(intent.type==='atk'){
-      display+=`\n预计伤害: ${intent.totalDmg||intent.val}`;
+      const bonus = this.enemy.branchBonus || 0;
+      const previewHits = intent.hits ? intent.hits.map(v=>v+bonus) : [intent.val+bonus];
+      display+=`\n预计伤害: ${previewHits.reduce((a,b)=>a+b,0)}`;
       if(intent.totalShield) display+=`\n预计护盾: ${intent.totalShield}`;
     }
     else if(intent.type==='buff'||intent.type==='heal'||intent.type==='debuff'){display+=`\n效果: ${intent.desc}`;}
@@ -459,32 +509,47 @@ export class BattleManager {
 
   renderEnemy() {
     this.fx?.setEnemy(this.enemy);
-    $('#enemy-sprite').textContent=this.enemy.icon;
+    const sprite=$('#enemy-sprite');
+    if(this.enemy.image){
+      sprite.classList.add('enemy-image');
+      sprite.style.backgroundImage=`url("${this.enemy.image}")`;
+      sprite.textContent='';
+    } else {
+      sprite.classList.remove('enemy-image');
+      sprite.style.backgroundImage='';
+      sprite.textContent=this.enemy.icon;
+    }
     $('#enemy-name').textContent=this.enemy.name;
     const pct=Math.max(0,this.enemy.hp/this.enemy.maxHp*100);
     $('#enemy-hp-bar').style.width=pct+'%';
     $('#enemy-hp-text').textContent=`${Math.max(0,this.enemy.hp)} / ${this.enemy.maxHp}`;
     $('#enemy-shield').textContent=this.enemy.shield>0?`🛡️ ${this.enemy.shield}`:'';
-    $('#enemy-status').innerHTML=renderStatusTags(this.enemy.status);
+    const enemyStatusHtml=renderStatusTags(this.enemy.status);
+    $('#enemy-status').innerHTML=enemyStatusHtml.includes('empty-status')?'':enemyStatusHtml;
 
     const codeLibEl = $('#enemy-code-lib');
     if (codeLibEl) {
       const lines = this.enemyCodeLib.length ? this.enemyCodeLib.map(line=>this.formatCodeSyntax(line)).join('\n') : '暂无代码库信息';
-      codeLibEl.textContent = `代码库\n${lines}`;
+      codeLibEl.textContent = `行动库\n${lines}`;
     }
 
     const abilityEl = $('#enemy-ability');
     if (abilityEl) {
-      abilityEl.textContent = `能力\n${this.enemyAbility}`;
+      abilityEl.textContent = `特性\n${this.enemyAbility}`;
     }
   }
   renderPlayer() {
     $('#player-hp').textContent=`${this.player.hp} / ${this.player.maxHp}`;
+    const hpFill=$('#player-hp-fill');
+    if(hpFill) hpFill.style.width=`${Math.max(0,Math.min(100,this.player.hp/this.player.maxHp*100))}%`;
     $('#player-shield').textContent=this.player.shield;
     $('#param-sum').textContent=`${this.usedParamSum}/${this.maxParamSum}`;
-    const totalDraw=this.instructionDrawPile.length+this.paramDrawPile.length;
-    const totalDiscard=this.instructionDiscardPile.length+this.paramDiscardPile.length;
-    $('#pile-info').textContent=`${totalDraw}抽 / ${totalDiscard}弃`;
+    const paramFill=$('#param-fill');
+    if(paramFill) paramFill.style.width=`${Math.max(0,Math.min(100,this.usedParamSum/this.maxParamSum*100))}%`;
+    const quotas=this.getNextTurnDrawQuotas();
+    $('#pile-info').innerHTML=
+      `<div class="pile-row"><span class="pile-type">指令牌</span><span class="pile-chip"><em>抽牌堆</em><b>${this.instructionDrawPile.length}</b></span><span class="pile-chip"><em>弃牌堆</em><b>${this.instructionDiscardPile.length}</b></span><span class="pile-chip next-draw"><em>下回合抽</em><b>${quotas.instruction}</b></span></div>`+
+      `<div class="pile-row"><span class="pile-type">参数牌</span><span class="pile-chip"><em>抽牌堆</em><b>${this.paramDrawPile.length}</b></span><span class="pile-chip"><em>弃牌堆</em><b>${this.paramDiscardPile.length}</b></span><span class="pile-chip next-draw"><em>下回合抽</em><b>${quotas.parameter}</b></span></div>`;
     $('#player-status').innerHTML=renderStatusTags(this.player.status);
     const pp=$('#player-plugins');
     if(pp){pp.innerHTML='';(this.run.plugins||[]).forEach(pid=>{const pd=PLUGIN_DEFS[pid];if(pd){
@@ -518,17 +583,53 @@ export class BattleManager {
 
   clearLog() { $('#log-entries').innerHTML=''; }
 
+  _setMoveDrag(e) {
+    if(!e?.dataTransfer) return;
+    e.dataTransfer.effectAllowed='move';
+    e.dataTransfer.dropEffect='move';
+  }
+
+  _setDropMove(e) {
+    if(!e?.dataTransfer) return;
+    e.dataTransfer.dropEffect='move';
+  }
+
+  _beginGameDrag(e) {
+    this._activeGameDrag = true;
+    this._setMoveDrag(e);
+  }
+
+  _endGameDrag() {
+    this._activeGameDrag = false;
+    this._clearDragVisuals();
+  }
+
+  _acceptMoveDrop(e, el) {
+    e.preventDefault();
+    this._setDropMove(e);
+    if(el) el.classList.add('drag-over');
+  }
+
+  _clearDragVisuals() {
+    document.querySelectorAll('.drag-over').forEach(el=>el.classList.remove('drag-over'));
+    const hand=$('#hand-cards');
+    if(hand) hand.classList.remove('hand-drop-target');
+    document.querySelectorAll('.program-line').forEach(el=>el.style.pointerEvents='');
+  }
+
   renderHand() {
     this.closeIfPreviewPopover();
+    const handLabel=$('#hand-label');
+    if(handLabel) handLabel.textContent='手牌';
     const container=$('#hand-cards');
     container.innerHTML='';
     // Set up drop-to-hand handler once
     if(!container._handDropBound){
       container._handDropBound=true;
-      container.addEventListener('dragover',e=>{e.preventDefault();container.classList.add('hand-drop-target');});
+      container.addEventListener('dragover',e=>{e.preventDefault();this._setDropMove(e);container.classList.add('hand-drop-target');});
       container.addEventListener('dragleave',e=>{if(!container.contains(e.relatedTarget))container.classList.remove('hand-drop-target');});
       container.addEventListener('drop',e=>{
-        e.preventDefault();container.classList.remove('hand-drop-target');
+        e.preventDefault();this._setDropMove(e);this._endGameDrag();
         try{const data=JSON.parse(e.dataTransfer.getData('text/plain'));
         if(data.source==='program'){this.removeLine(data.lineIdx);}
         else if(data.source==='child'){
@@ -586,8 +687,8 @@ export class BattleManager {
         } else {
           el.innerHTML=`<div class="card-icon">${def.icon}</div><div class="card-name">${def.name}</div><div class="card-desc">${def.desc||''}</div>`;
         }
-        el.addEventListener('dragstart',e=>{e.dataTransfer.setData('text/plain',JSON.stringify({source:'hand',idx:i}));el.classList.add('dragging');});
-        el.addEventListener('dragend',()=>el.classList.remove('dragging'));
+        el.addEventListener('dragstart',e=>{this._beginGameDrag(e);e.dataTransfer.setData('text/plain',JSON.stringify({source:'hand',idx:i}));el.classList.add('dragging');});
+        el.addEventListener('dragend',()=>{el.classList.remove('dragging');this._endGameDrag();});
         el.addEventListener('click',()=>{
           if(this.phase!=='player') return;
           if(this.selectedCard&&this.selectedCard.idx===i){this.selectedCard=null;this.closeIfPreviewPopover();this.renderHand();return;}
@@ -847,9 +948,9 @@ export class BattleManager {
       const line=document.createElement('div');
       line.className='program-line'; line.dataset.lineIdx=i;
       if(depth>0) line.style.paddingLeft=(depth*20)+'px';
-      line.addEventListener('dragover',e=>{e.preventDefault();line.classList.add('drag-over');});
+      line.addEventListener('dragover',e=>this._acceptMoveDrop(e,line));
       line.addEventListener('dragleave',e=>{if(!line.contains(e.relatedTarget))line.classList.remove('drag-over');});
-      line.addEventListener('drop',e=>{e.preventDefault();line.classList.remove('drag-over');this.handleDrop(i,e);});
+      line.addEventListener('drop',e=>{e.preventDefault();this._setDropMove(e);this._endGameDrag();this.handleDrop(i,e);});
       const numEl=document.createElement('span');
       numEl.className='line-number'; numEl.textContent=String(i+1).padStart(2,'0');
       if(depth>0){numEl.style.borderLeft=`2px solid rgba(88,166,255,${Math.max(0.15,0.5-depth*0.1)})`;numEl.style.paddingLeft='6px';}
@@ -932,9 +1033,9 @@ export class BattleManager {
           }
           if(dragHandle){
             dragHandle.draggable=true;
-            dragHandle.addEventListener('dragstart',ev=>{ev.dataTransfer.setData('text/plain',JSON.stringify({source:'child',lineIdx:i}));
+            dragHandle.addEventListener('dragstart',ev=>{this._beginGameDrag(ev);ev.dataTransfer.setData('text/plain',JSON.stringify({source:'child',lineIdx:i}));
               setTimeout(()=>{dragHandle.style.opacity='0.3';line.style.pointerEvents='none';},0);});
-            dragHandle.addEventListener('dragend',()=>{dragHandle.style.opacity='1';line.style.pointerEvents='';});
+            dragHandle.addEventListener('dragend',()=>{dragHandle.style.opacity='1';line.style.pointerEvents='';this._endGameDrag();});
           }
           if(cDef.needsParam) this._renderParamSlot(content,slot.node,()=>this.program[i].node);
           const parentSlot=this.program[slot.childOf];
@@ -1034,16 +1135,17 @@ export class BattleManager {
       slot.style.cursor='grab';
       slot.addEventListener('dragstart',e=>{
         e.stopPropagation();
+        this._beginGameDrag(e);
         e.dataTransfer.setData('text/plain',JSON.stringify({source:'param',nodeRef:true}));
         this._dragParamNode=node;
         setTimeout(()=>{slot.style.opacity='0.3';},0);
       });
-      slot.addEventListener('dragend',()=>{slot.style.opacity='1';this._dragParamNode=null;});
+      slot.addEventListener('dragend',()=>{slot.style.opacity='1';this._dragParamNode=null;this._endGameDrag();});
     }
-    slot.addEventListener('dragover',e=>{e.preventDefault();slot.classList.add('drag-over');});
+    slot.addEventListener('dragover',e=>this._acceptMoveDrop(e,slot));
     slot.addEventListener('dragleave',()=>slot.classList.remove('drag-over'));
     slot.addEventListener('drop',e=>{
-      e.preventDefault();e.stopPropagation();slot.classList.remove('drag-over');
+      e.preventDefault();e.stopPropagation();this._setDropMove(e);this._endGameDrag();
       try{const data=JSON.parse(e.dataTransfer.getData('text/plain'));
       if(data.source==='hand'){const card=this.hand[data.idx];if(!card)return;const def=CARD_DEFS[card.defId];
       if(def.type!=='parameter')return;
@@ -1100,6 +1202,7 @@ export class BattleManager {
     });
     block.draggable=true;
     block.addEventListener('dragstart',e=>{
+      this._beginGameDrag(e);
       e.dataTransfer.setData('text/plain',JSON.stringify({source:'program',lineIdx}));
       const lineEl=block.closest('.program-line');
       setTimeout(()=>{
@@ -1109,6 +1212,7 @@ export class BattleManager {
     });
     block.addEventListener('dragend',()=>{block.style.opacity='1';
       document.querySelectorAll('.program-line').forEach(cl=>cl.style.pointerEvents='');
+      this._endGameDrag();
     });
     container.appendChild(block);
     if(def.needsParam) this._renderParamSlot(container,node,()=>this.program[lineIdx]);
@@ -1322,16 +1426,17 @@ export class BattleManager {
       bstate:this, dmgMult:(this.turn===1&&this.hasPlugin('overclock'))?1.3:1, steps:0, maxSteps:80, hasAttacked:false, loopDepth:0, usedParamInstruction:false,
       dealDamage:(val)=>{
         let dmg=val;
-        if(this.player.status.doubleNext){dmg*=2;this.player.status.doubleNext=false;}
-        if(this.enemy.status.vulnerable>0) dmg=Math.floor(dmg*1.3);
+        if(this.chargeDamageThisTurn) dmg=Math.round(dmg*1.5);
+        if(this.enemy.status.vulnerable>0){dmg=Math.ceil(dmg*1.5);this.enemy.status.vulnerable--;}
         if(this.enemy.shield>0){const ab=Math.min(this.enemy.shield,dmg);this.enemy.shield-=ab;dmg-=ab;}
         this.enemy.hp-=dmg;
         ctx.hasAttacked=true;
+        if(this.enemy.onHit) this.enemy.onHit(this.enemy,this);
         this.fx?.playAttack();
-        this.fx?.playHit(val);
+        this.fx?.playHit(dmg);
         this.renderEnemy();
-        this.addLog(`攻击 → 敌人 -${val}`,'dmg');
-        this.floatText($('#enemy-sprite'),`-${val}`,'var(--red)');$('#enemy-sprite').classList.add('shake');setTimeout(()=>$('#enemy-sprite').classList.remove('shake'),300);
+        this.addLog(`攻击 → 敌人 -${dmg}`,'dmg');
+        this.floatText($('#enemy-sprite'),`-${dmg}`,'var(--red)');$('#enemy-sprite').classList.add('shake');setTimeout(()=>$('#enemy-sprite').classList.remove('shake'),300);
       },
       addShield:(val)=>{this.player.shield+=val;this.fx?.playShield('player',val);this.renderPlayer();this.addLog(`防御 → +${val} 护盾`,'shield');this.floatText($('#player-panel'),`+${val} 🛡️`,'var(--blue)');},
       healHP:(val)=>{this.player.hp=Math.min(this.player.maxHp,this.player.hp+val);this.fx?.playHeal('player',val);this.renderPlayer();this.addLog(`治疗 → +${val} HP`,'heal');this.floatText($('#player-panel'),`+${val} HP`,'var(--green)');},
@@ -1377,7 +1482,7 @@ export class BattleManager {
 
     // Check if player needs to discard excess hand cards
     let maxRetain = (this.run.maxRetain || MAX_RETAIN) + (this.hasPlugin('cache')?1:0);
-    // 架构师: for不计入手牌上限
+    // Default demo loadout: loop cards do not count toward hand limit.
     if(this.run.character==='architect'){
       const forCount = this.hand.filter(c=>{const d=CARD_DEFS[c.defId];return d&&(d.subtype==='for'||d.subtype==='for_accel'||d.subtype==='for_double');}).length;
       maxRetain += forCount;
@@ -1450,7 +1555,6 @@ export class BattleManager {
         else{await this.executeLines((node.elseChildren||[]).filter(c=>c!==null).map(c=>({...c})),ctx);}
       } else if(def.exec){
         let val=node.param||0;
-        if(this.chargeNext){val*=2;this.chargeNext=false;}
         val=Math.floor(val*ctx.dmgMult);
         def.exec(ctx,val);
         await delay(80);
@@ -1487,20 +1591,34 @@ export class BattleManager {
       await delay(300);
       return;
     }
-    const intent=this.currentIntent;
+    const intent=this.enemy.getIntent(this.turn,this.enemy,this.player);
+    this.currentIntent=intent;
+    if(this.enemy.status.stun>0){
+      this.enemy.status.stun--;
+      this.addLog(`${this.enemy.name} 眩晕，行动失败`,'info');
+      this.showBanner('眩晕','var(--blue)');
+      this.renderEnemy();this.renderPlayer();
+      await delay(300);
+      return;
+    }
     if(intent.type==='atk'){
-      let dmg=intent.val;
-      if(this.enemy.status.weaken>0) dmg=Math.max(0,dmg-this.enemy.status.weaken);
-      if(this.enemyWeakThisTurn) dmg=Math.floor(dmg*0.7);
-      let reflected=0;
-      if(this.player.status.reflect>0){reflected=Math.min(this.player.status.reflect,dmg);this.player.status.reflect-=reflected;this.enemy.hp-=reflected;this.fx?.playHit(reflected,0x58a6ff);this.addLog(`反弹 → 敌人 -${reflected}`,'shield');this.floatText($('#enemy-sprite'),`反弹-${reflected}`,'var(--blue)');}
-      dmg-=reflected;if(dmg<0)dmg=0;
-      if(this.player.shield>0){const ab=Math.min(this.player.shield,dmg);this.player.shield-=ab;dmg-=ab;}
-      this.player.hp-=dmg;
+      const hits=(intent.hits&&intent.hits.length?intent.hits:[intent.val]).map(v=>v+(this.enemy.branchBonus||0));
+      let totalActual=0,totalBase=0;
+      for(const hit of hits){
+        let dmg=hit; totalBase+=hit;
+        if(this.enemy.status.weaken>0) dmg=Math.max(0,dmg-this.enemy.status.weaken);
+        if(this.enemyWeakThisTurn) dmg=Math.floor(dmg*0.7);
+        if(this.player.status.vulnerable>0){dmg=Math.ceil(dmg*1.5);this.player.status.vulnerable--;}
+        let reflected=0;
+        if(this.player.status.reflect>0){reflected=Math.min(this.player.status.reflect,dmg);this.player.status.reflect-=reflected;this.enemy.hp-=reflected;this.fx?.playHit(reflected,0x58a6ff);this.addLog(`反弹 → 敌人 -${reflected}`,'shield');this.floatText($('#enemy-sprite'),`反弹-${reflected}`,'var(--blue)');}
+        dmg-=reflected;if(dmg<0)dmg=0;
+        if(this.player.shield>0){const ab=Math.min(this.player.shield,dmg);this.player.shield-=ab;dmg-=ab;}
+        this.player.hp-=dmg; totalActual+=dmg;
+      }
       this.fx?.playEnemyAttack();
-      this.fx?.playPlayerHit(intent.val);
-      this.addLog(`敌人攻击 → 你 -${intent.val}`,'dmg');
-      this.floatText($('#player-panel'),`-${intent.val}`,'var(--red)');
+      this.fx?.playPlayerHit(totalBase);
+      this.addLog(`敌人攻击 → 你 -${totalActual}`,'dmg');
+      this.floatText($('#player-panel'),`-${totalActual}`,'var(--red)');
       document.body.classList.add('screen-shake');
       setTimeout(()=>document.body.classList.remove('screen-shake'),200);
       if(intent.totalShield){
@@ -1509,6 +1627,7 @@ export class BattleManager {
         this.addLog(`敌人防御 +${intent.totalShield} 护盾`,'shield');
         this.floatText($('#enemy-sprite'),`+${intent.totalShield} 🛡️`,'var(--blue)');
       }
+      if(this.enemy.branchBonus>0) this.enemy.branchBonus=0;
     } else if(intent.type==='buff'){
       this.enemy.shield+=(intent.val||10);
       if(intent.totalShield) this.enemy.shield+=intent.totalShield;
@@ -1516,12 +1635,24 @@ export class BattleManager {
       this.addLog(`敌人防御 +${intent.val} 护盾`,'shield');
       this.floatText($('#enemy-sprite'),`+${intent.val} 🛡️`,'var(--blue)');
     } else if(intent.type==='debuff'){
+      if(intent.vulnerable){
+        this.player.status.vulnerable+=intent.vulnerable;
+      }
+      if(intent.selfBuff?.branchBonus){
+        this.enemy.branchBonus=(this.enemy.branchBonus||0)+intent.selfBuff.branchBonus;
+      }
       if(intent.drawPenalty){
         this.drawPenaltyNextTurn.instruction += intent.drawPenalty.instruction || 0;
         this.drawPenaltyNextTurn.parameter += intent.drawPenalty.parameter || 0;
         this.drawPenaltyNextTurn.any += intent.drawPenalty.any || 0;
       }
-      if((intent.val||0)>0&&this.hand.length>0){const ri=rand(0,this.hand.length-1);this.hand.splice(ri,1);}
+      if((intent.val||0)>0){
+        const discarded=this._discardRandomHandCardByEnemy();
+        if(discarded){
+          const cardName=CARD_DEFS[discarded.defId]?.name || '未知卡牌';
+          this.addLog(`敌人弃掉了 ${cardName}`,'info');
+        }
+      }
       this.addLog(`敌人施法: ${intent.desc}`,'info');
       this.floatText($('#player-panel'),intent.desc,'var(--purple)');
     } else if(intent.type==='heal'){
@@ -1542,7 +1673,6 @@ export class BattleManager {
     }
     // Decrement enemy status effects
     if(this.enemy.status.weaken>0) this.enemy.status.weaken--;
-    if(this.enemy.status.vulnerable>0) this.enemy.status.vulnerable--;
     this.renderEnemy();this.renderPlayer();
     await delay(300);
   }
@@ -1560,6 +1690,18 @@ export class BattleManager {
   }
 
   destroy() {
+    if(this._globalDragOver){
+      window.removeEventListener('dragover', this._globalDragOver, true);
+      this._globalDragOver = null;
+    }
+    if(this._globalDragDrop){
+      window.removeEventListener('drop', this._globalDragDrop, true);
+      this._globalDragDrop = null;
+    }
+    if(this._globalDragCleanup){
+      window.removeEventListener('dragend', this._globalDragCleanup, true);
+      this._globalDragCleanup = null;
+    }
     this.fx?.destroy();
     this.fx = null;
   }

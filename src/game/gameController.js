@@ -1,4 +1,4 @@
-﻿﻿import { $, rand, pick, newCardId } from '../core/utils.js';
+import { $, rand, pick, newCardId } from '../core/utils.js';
 import { CARD_DEFS, IF_CONDITIONS, cardDisplayClass } from '../data/cards.js';
 import { CHARACTERS } from '../data/characters.js';
 import { EVENTS_LIST } from '../data/events.js';
@@ -11,6 +11,83 @@ export const Game = {
   run:null, battle:null,
   rewardIfPreviewEl:null, rewardIfPreviewCardId:null, rewardIfPreviewAnchor:null, _rewardIfPreviewCleanup:null,
   showScreen(name) { document.querySelectorAll('.screen').forEach(s=>s.classList.add('hidden')); document.getElementById('screen-'+name).classList.remove('hidden'); },
+
+  _cardRarityLabel(def) {
+    return (def.rarity || 1) === 3 ? '史诗' : ((def.rarity || 1) === 2 ? '稀有' : '普通');
+  },
+
+  _cardTypeLabel(def) {
+    if (def.type === 'parameter') return '参数';
+    if (def.subtype === 'for' || def.subtype === 'for_accel' || def.subtype === 'for_double') return '循环';
+    if (def.subtype === 'if' || def.subtype === 'if_else') return '判断';
+    return '指令';
+  },
+
+  _cardSummary(def) {
+    if (def.type === 'parameter') return `参数值 ${def.value}`;
+    return def.desc || '';
+  },
+
+  _groupDeckCards() {
+    const map = new Map();
+    this.run.deck.forEach(card => {
+      const row = map.get(card.defId) || { defId: card.defId, cards: [] };
+      row.cards.push(card);
+      map.set(card.defId, row);
+    });
+    return [...map.values()].sort((a,b) => {
+      const ad = CARD_DEFS[a.defId], bd = CARD_DEFS[b.defId];
+      const at = ad.type === 'parameter' ? 1 : 0;
+      const bt = bd.type === 'parameter' ? 1 : 0;
+      if (at !== bt) return at - bt;
+      return (ad.rarity || 1) - (bd.rarity || 1) || ad.name.localeCompare(bd.name, 'zh-CN');
+    });
+  },
+
+  openDeckModal(options={}) {
+    if (!this.run) return;
+    this.closeDeckModal();
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-backdrop';
+    const mode = options.mode || 'view';
+    const title = mode === 'remove' ? '选择要删除的卡' : '当前牌库';
+    const deckSize = this.run.deck.length;
+    overlay.innerHTML = `<div class="deck-modal"><div class="deck-modal-head"><div><div class="deck-modal-kicker">DECK VIEW</div><h3>${title}</h3></div><button class="deck-close" aria-label="关闭">×</button></div><div class="deck-modal-meta"><span>${deckSize} 张卡</span><span>指令 ${this.run.deck.filter(c=>CARD_DEFS[c.defId]?.type==='instruction').length}</span><span>参数 ${this.run.deck.filter(c=>CARD_DEFS[c.defId]?.type==='parameter').length}</span></div><div class="deck-list"></div><div class="deck-modal-foot"></div></div>`;
+    const list = overlay.querySelector('.deck-list');
+    this._groupDeckCards().forEach(group => {
+      const def = CARD_DEFS[group.defId];
+      if (!def) return;
+      const item = document.createElement('button');
+      item.className = 'deck-list-card ' + cardDisplayClass(def);
+      item.type = 'button';
+      const disabled = mode === 'remove' && this.run.deck.length <= 8;
+      item.disabled = disabled;
+      item.innerHTML = `<span class="deck-card-icon">${def.icon}</span><span class="deck-card-main"><span class="deck-card-name">${def.name}</span><span class="deck-card-desc">${this._cardSummary(def)}</span></span><span class="deck-card-tags"><b>x${group.cards.length}</b><em>${this._cardTypeLabel(def)}</em><em>${this._cardRarityLabel(def)}</em></span>`;
+      if (mode === 'remove') {
+        item.addEventListener('click', () => {
+          const idx = this.run.deck.findIndex(c => c.id === group.cards[0].id);
+          if (idx === -1) return;
+          this.run.deck.splice(idx, 1);
+          if (typeof options.onRemove === 'function') options.onRemove(def);
+          this.closeDeckModal();
+        });
+      }
+      list.appendChild(item);
+    });
+    const foot = overlay.querySelector('.deck-modal-foot');
+    foot.textContent = mode === 'remove' ? '点击一张卡将其从牌库中删除。' : '战斗中会按指令牌堆与参数牌堆分别洗牌。';
+    overlay.querySelector('.deck-close').addEventListener('click', () => this.closeDeckModal());
+    overlay.addEventListener('click', evt => { if (evt.target === overlay) this.closeDeckModal(); });
+    document.body.appendChild(overlay);
+    this.deckModalEl = overlay;
+  },
+
+  closeDeckModal() {
+    if (this.deckModalEl) {
+      this.deckModalEl.remove();
+      this.deckModalEl = null;
+    }
+  },
 
   toggleTitleLore() {
     const panel = document.getElementById('title-lore-panel');
@@ -82,17 +159,7 @@ export const Game = {
   },
 
   startRun() {
-    this.showScreen('charselect');
-    const container=$('#char-cards'); container.innerHTML='';
-    Object.entries(CHARACTERS).forEach(([key,ch])=>{
-      const card=document.createElement('div'); card.className='char-card';
-      const visual = ch.portrait
-        ? `<img class="char-portrait" src="${ch.portrait}" alt="${ch.name}">`
-        : ch.icon;
-      card.innerHTML=`<div class="char-icon">${visual}</div><div class="char-copy"><div class="char-name-row"><div class="char-name">${ch.name}</div><div class="char-tag">人格模块</div></div><div class="char-ability">${ch.ability}</div><div class="char-desc">${ch.abilityDesc}</div></div>`;
-      card.addEventListener('click',()=>this.selectCharacter(key));
-      container.appendChild(card);
-    });
+    this.selectCharacter('architect');
   },
 
   selectCharacter(charKey) {
@@ -107,6 +174,7 @@ export const Game = {
       handQuotas:{instruction:3, parameter:3},
       maxRetain:charKey==='refactor'?4:3,
       plugins:[],
+      shopStock:{},
     };
     this.showMap();
   },
@@ -115,8 +183,7 @@ export const Game = {
     this.showScreen('map');
     $('#map-hp').textContent=`${this.run.hp} / ${this.run.maxHp}`;
     $('#map-gold').textContent=this.run.gold;
-    const layerNames = MapGenerator.LAYER_NAMES;
-    $('#map-layer-name').textContent = '// ' + (layerNames[this.run.currentFloor] || 'Unknown') + ' - 第' + (this.run.currentFloor + 1) + '层';
+    $('#map-layer-name').textContent = '';
     this.renderMap();
   },
 
@@ -229,13 +296,7 @@ export const Game = {
       });
     });
 
-    columns.forEach((column, colIndex) => {
-      const label = document.createElement('div');
-      label.className = 'map-col-label';
-      label.textContent = colIndex === 0 ? '入口' : `阶段 ${colIndex + 1}`;
-      label.style.left = `${46 + colIndex * 132}px`;
-      board.appendChild(label);
-
+    columns.forEach((column) => {
       column.forEach(node => {
         const point = pointOf(node.col, node.y);
         const el = document.createElement('div');
@@ -318,6 +379,12 @@ export const Game = {
     this.isBoss=isBoss;
     this.showScreen('battle');
     this.battle=new BattleManager(enemyDef,this.run,(won)=>this.endBattle(won));
+    if (isBoss && enemyDef.name === '红字审判') {
+      this.showStoryToast('红字审判', '所有未处理的错误都聚成了这一行红字。读懂它，然后改写它。');
+    } else if (enemyDef.name === 'BUG' && !this.run.tutorialSeen) {
+      this.run.tutorialSeen = true;
+      this.showTutorialOverlay();
+    }
   },
 
   endBattle(won) {
@@ -328,10 +395,60 @@ export const Game = {
       this.run.gold+=rand(10,20);
       if(this.isBoss){
         this.run.bossesKilled++;
+        if(this.run.currentFloor===0){this.showDemoComplete();return;}
         if(this.run.currentFloor<this.run.map.length-1){this.run.currentFloor++;this.showReward();}
         else{this.showGameOver(true);return;}
       } else this.showReward();
     } else this.showGameOver(false);
+  },
+
+  showStoryToast(title, text) {
+    const old = document.querySelector('.story-toast');
+    if (old) old.remove();
+    const toast = document.createElement('div');
+    toast.className = 'story-toast';
+    toast.innerHTML = `<div class="story-toast-title">${title}</div><div class="story-toast-text">${text}</div>`;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.classList.add('show'), 20);
+    setTimeout(() => {
+      toast.classList.remove('show');
+      setTimeout(() => toast.remove(), 260);
+    }, 4200);
+  },
+
+  showTutorialOverlay() {
+    const overlay = document.createElement('div');
+    overlay.className = 'tutorial-overlay';
+    overlay.innerHTML = `
+      <div class="tutorial-panel">
+        <div class="tutorial-kicker">FIRST DEBUG</div>
+        <h3>第一场战斗</h3>
+        <p>先看上方敌人的代码意图，再把指令牌拖进编程区。需要数值的指令，要把参数牌放到它旁边。</p>
+        <div class="tutorial-steps">
+          <span>1. 看敌方代码</span>
+          <span>2. 拖入攻击/防御</span>
+          <span>3. 填参数</span>
+          <span>4. 点击运行</span>
+        </div>
+        <button>开始调试</button>
+      </div>`;
+    overlay.querySelector('button').addEventListener('click', () => overlay.remove());
+    document.body.appendChild(overlay);
+  },
+
+  showDemoComplete() {
+    this.showScreen('gameover');
+    $('#gameover-art').innerHTML = '<div class="demo-complete-art"><span></span><span></span><span></span></div>';
+    $('#gameover-title').textContent = 'Demo 完成';
+    $('#gameover-title').style.color = 'var(--green)';
+    $('#gameover-stats').innerHTML =
+      `你修复了第一层的红字审判。<br>`+
+      `Error Zone 与 Kernel Space 仍在开发中。<br><br>`+
+      `探索节点: ${this.run.nodesVisited}<br>`+
+      `击败Boss: ${this.run.bossesKilled}<br>`+
+      `剩余HP: ${Math.max(0, this.run.hp)}<br>`+
+      `牌库大小: ${this.run.deck.length}<br><br>`+
+      `<span class="demo-note">未完待续：下一次下潜，将进入更深的心智后台。</span>`;
   },
 
   showReward() {
@@ -341,7 +458,7 @@ export const Game = {
     const eType = this.lastEnemyType || 'normal';
     const eTypeLabel = eType==='boss'?'Boss击杀':eType==='elite'?'精英击杀':'战斗胜利';
     const rewardTitle = document.querySelector('#screen-reward h2');
-    if(rewardTitle) rewardTitle.textContent = '// ' + eTypeLabel + ' - 选择奖励';
+    if(rewardTitle) rewardTitle.textContent = eTypeLabel + ' - 选择奖励';
     const ownedPlugins = this.run.plugins || [];
     const cardsOfRarity = (r) => Object.keys(CARD_DEFS).filter(id=>CARD_DEFS[id].draftable!==false && (CARD_DEFS[id].rarity||1)===r);
     let pool;
@@ -390,13 +507,12 @@ export const Game = {
     if (eType==='elite' || eType==='boss') {
       const targetTier = eType==='boss' ? 'advanced' : 'normal';
       let availPlugins = Object.keys(PLUGIN_DEFS).filter(id=>!ownedPlugins.includes(id) && PLUGIN_DEFS[id].tier===targetTier);
-        card.innerHTML='<div class="card-icon">' + pdef.icon + '</div><div class="card-name">' + pdef.name + '</div><div class="card-desc">' + pdef.desc + '</div><div style="font-size:9px;color:var(--orange);margin-top:2px;">[' + tierLabel + '插件 - 必得]</div>';
       if (availPlugins.length) {
         const pid = pick(availPlugins);
         const pdef = PLUGIN_DEFS[pid];
         const tierLabel = pdef.tier==='advanced' ? '高级' : '普通';
         const card = document.createElement('div'); card.className='reward-plugin';
-        card.innerHTML='<div class="card-icon">' + pdef.icon + '</div><div class="card-name">' + pdef.name + '</div><div class="card-desc">' + pdef.desc + '</div><div style="font-size:9px;color:var(--orange);margin-top:2px;">[' + tierLabel + '鎻掍欢 - 蹇呭緱]</div>';
+        card.innerHTML='<div class="card-icon">' + pdef.icon + '</div><div class="card-name">' + pdef.name + '</div><div class="card-desc">' + pdef.desc + '</div><div style="font-size:9px;color:var(--orange);margin-top:2px;">[' + tierLabel + '插件 - 必得]</div>';
         card.addEventListener('click',()=>{this.run.plugins.push(pid);this.showMap();});
         container.appendChild(card);
       }
@@ -413,6 +529,7 @@ export const Game = {
     $('#event-desc').textContent = evt.desc;
     const choicesEl = $('#event-choices');
     choicesEl.innerHTML = '';
+    choicesEl.className = '';
     evt.choices.forEach(ch => {
       const btn = document.createElement('button');
       btn.textContent = ch.text;
@@ -420,139 +537,172 @@ export const Game = {
       btn.addEventListener('click', () => { ch.action(this.run); this.showMap(); });
       choicesEl.appendChild(btn);
     });
+    this._appendDeckViewButton(choicesEl);
   },
 
   showRest() {
     this.showScreen('event');
-    $('#event-icon').textContent = '🛌';
-    $('#event-title').textContent = '休息站';
-    $('#event-desc').textContent = '你找到了一处暂时安全的角落，可以休息片刻。';
+    $('#event-icon').textContent = '🛋️';
+    $('#event-title').textContent = '安全屋';
+    $('#event-desc').innerHTML = `<div class="rest-hero"><strong>系统噪声暂时降下来了。</strong><span>你只能做一件事：恢复状态、整理牌库，或为下一场战斗预编译一段启动流程。</span></div>`;
     const choicesEl = $('#event-choices');
     choicesEl.innerHTML = '';
+    choicesEl.className = 'rest-grid';
 
+    const healAmount = Math.max(12, Math.floor(this.run.maxHp * 0.35));
     const healBtn = document.createElement('button');
-    healBtn.textContent = `休息 (恢复 ${Math.floor(this.run.maxHp * 0.3)} HP)`;
-    healBtn.style.cssText = 'background:var(--bg3);border:1px solid var(--green);color:var(--green);';
+    healBtn.className = 'rest-card heal';
+    healBtn.innerHTML = `<span class="rest-icon">💚</span><span class="rest-name">休整</span><span class="rest-desc">恢复 ${healAmount} HP。适合血量危险时保命。</span>`;
     healBtn.addEventListener('click', () => {
-      this.run.hp = Math.min(this.run.maxHp, this.run.hp + Math.floor(this.run.maxHp * 0.3));
+      this.run.hp = Math.min(this.run.maxHp, this.run.hp + healAmount);
       this.showMap();
     });
     choicesEl.appendChild(healBtn);
 
-    const forgeBtn = document.createElement('button');
-    forgeBtn.textContent = '锻造 (升级随机卡牌 -> +5金币)';
-    forgeBtn.style.cssText = 'background:var(--bg3);border:1px solid var(--yellow);color:var(--yellow);';
-    forgeBtn.addEventListener('click', () => {
-      this.run.gold += 5;
-      this.showMap();
-    });
-    choicesEl.appendChild(forgeBtn);
-
-    const recallBtn = document.createElement('button');
-    recallBtn.textContent = '回忆 (-5 HP, 获得随机牌)';
-    recallBtn.style.cssText = 'background:var(--bg3);border:1px solid var(--purple);color:var(--purple);';
-    recallBtn.addEventListener('click', () => {
-      this.run.hp -= 5;
-      const pool = ['atk', 'def', 'heal', 'poison', 'burn', 'for_loop', 'if_atk2', 'p5', 'p7'];
-      this.run.deck.push({ id: newCardId(), defId: pick(pool) });
-      this.showMap();
-    });
-    choicesEl.appendChild(recallBtn);
-
-    const ownedPlugins = this.run.plugins || [];
-    const availPlugins = Object.keys(PLUGIN_DEFS).filter(id => !ownedPlugins.includes(id) && PLUGIN_DEFS[id].tier === 'normal');
-    if (availPlugins.length && Math.random() < 0.4) {
-      const pid = pick(availPlugins);
-      const pdef = PLUGIN_DEFS[pid];
-      const plugBtn = document.createElement('button');
-      plugBtn.textContent = `拾取插件: ${pdef.icon} ${pdef.name} - ${pdef.desc}`;
-      plugBtn.style.cssText = 'background:var(--bg3);border:1px solid var(--orange);color:var(--orange);';
-      plugBtn.addEventListener('click', () => {
-        this.run.plugins.push(pid);
-        this.showMap();
-      });
-      choicesEl.appendChild(plugBtn);
+    const cleanBtn = document.createElement('button');
+    cleanBtn.className = 'rest-card clean';
+    cleanBtn.innerHTML = `<span class="rest-icon">🧹</span><span class="rest-name">整理牌库</span><span class="rest-desc">删除牌库中的1张牌。不恢复HP。</span>`;
+    if (this.run.deck.length <= 8) {
+      cleanBtn.disabled = true;
+      cleanBtn.classList.add('disabled');
+      cleanBtn.innerHTML += '<span class="rest-note">牌库过薄</span>';
     }
+    cleanBtn.addEventListener('click', () => {
+      if (this.run.deck.length <= 8) return;
+      this.openDeckModal({ mode:'remove', onRemove:() => this.showMap() });
+    });
+    choicesEl.appendChild(cleanBtn);
+
+    const prepBtn = document.createElement('button');
+    prepBtn.className = 'rest-card prep';
+    prepBtn.innerHTML = `<span class="rest-icon">⏩</span><span class="rest-name">预编译</span><span class="rest-desc">下一场战斗首回合额外抽1张指令牌和1张参数牌。</span>`;
+    prepBtn.addEventListener('click', () => {
+      this.run.nextBattleBoost = { instruction:1, parameter:1 };
+      this.showMap();
+    });
+    choicesEl.appendChild(prepBtn);
+
+    this._appendDeckViewButton(choicesEl);
+  },
+
+  _getShopStock() {
+    const layer = this.run.map[this.run.currentFloor];
+    const shopId = layer?.currentNodeId || `floor-${this.run.currentFloor}-fallback`;
+    if (!this.run.shopStock) this.run.shopStock = {};
+    if (!this.run.shopStock[shopId]) {
+      const ownedPlugins = this.run.plugins || [];
+      const availPlugins = Object.keys(PLUGIN_DEFS).filter(id => !ownedPlugins.includes(id) && PLUGIN_DEFS[id].tier === 'normal');
+      this.run.shopStock[shopId] = {
+        cards: [
+          { defId: pick(['atk', 'def', 'heal', 'draw', 'poison', 'burn', 'charge']), cost: 15, sold:false },
+          { defId: pick(['for_loop', 'for_accel', 'for_double', 'if_atk2', 'if_plus5']), cost: 25, sold:false },
+          { defId: pick(['p3', 'p4', 'p5', 'p6', 'p7', 'p8']), cost: 20, sold:false },
+        ],
+        plugin: availPlugins.length ? { id: pick(availPlugins), cost: 40, sold:false } : null,
+        removeUsed:false,
+      };
+    }
+    return this.run.shopStock[shopId];
+  },
+
+  _makeEventButton(text, color, onClick, disabled=false) {
+    const btn = document.createElement('button');
+    btn.textContent = text;
+    btn.style.cssText = `background:var(--bg3);border:1px solid ${color};color:${color};`;
+    btn.disabled = disabled;
+    if (disabled) btn.style.opacity = '0.35';
+    if (onClick) btn.addEventListener('click', onClick);
+    return btn;
+  },
+
+  _appendDeckViewButton(container) {
+    container.appendChild(this._makeEventButton('查看牌库', 'var(--blue)', () => this.openDeckModal()));
   },
 
   showShop() {
     this.showScreen('event');
     $('#event-icon').textContent = '🏪';
     $('#event-title').textContent = '代码商店';
-    $('#event-desc').textContent = `你有 ${this.run.gold} 金币`;
+    $('#event-desc').innerHTML = `<div class="shop-hero"><div class="shop-terminal-art"><span></span><span></span><span></span></div><div>货架会在本节点内保持不变。买走的商品会标记为售罄，不会刷新成新货。</div><strong>金币 ${this.run.gold}</strong></div>`;
     const choicesEl = $('#event-choices');
     choicesEl.innerHTML = '';
+    choicesEl.className = 'shop-grid';
 
-    const shopItems = [
-      { defId: pick(['atk', 'def', 'heal', 'draw', 'poison', 'burn']), cost: 15 },
-      { defId: pick(['for_loop', 'for_accel', 'for_double', 'if_atk2', 'if_plus5']), cost: 25 },
-      { defId: pick(['p3', 'p4', 'p5', 'p7', 'p8']), cost: 20 },
-    ];
-
-    shopItems.forEach(item => {
+    const stock = this._getShopStock();
+    stock.cards.forEach(item => {
       const def = CARD_DEFS[item.defId];
-      const rarityLabel = (def.rarity || 1) === 3 ? '史诗' : (def.rarity || 1) === 2 ? '稀有' : '普通';
       const btn = document.createElement('button');
-      btn.textContent = `${def.icon} ${def.name} [${rarityLabel}] (${item.cost}金币)`;
-      btn.style.cssText = 'background:var(--bg3);border:1px solid var(--yellow);color:var(--yellow);';
-      if (this.run.gold < item.cost) { btn.style.opacity = '0.3'; btn.disabled = true; }
+      btn.className = 'shop-card ' + cardDisplayClass(def);
+      btn.innerHTML = `<span class="shop-card-icon">${def.icon}</span><span class="shop-card-name">${def.name}</span><span class="shop-card-desc">${this._cardSummary(def)}</span><span class="shop-card-meta">${this._cardRarityLabel(def)} / ${item.cost} 金币</span>`;
+      if (item.sold) {
+        btn.classList.add('sold');
+        btn.disabled = true;
+        btn.innerHTML += '<span class="shop-sold">已售罄</span>';
+      } else if (this.run.gold < item.cost) {
+        btn.disabled = true;
+        btn.classList.add('disabled');
+      }
       btn.addEventListener('click', () => {
-        if (this.run.gold >= item.cost) {
-          this.run.gold -= item.cost;
-          this.run.deck.push({ id: newCardId(), defId: item.defId });
-          this.showShop();
-        }
+        if (this.run.gold < item.cost || item.sold) return;
+        this.run.gold -= item.cost;
+        this.run.deck.push({ id: newCardId(), defId: item.defId });
+        item.sold = true;
+        this.showShop();
       });
       choicesEl.appendChild(btn);
     });
 
-    const ownedPlugins = this.run.plugins || [];
-    const availPlugins = Object.keys(PLUGIN_DEFS).filter(id => !ownedPlugins.includes(id) && PLUGIN_DEFS[id].tier === 'normal');
-    if (availPlugins.length) {
-      const pid = pick(availPlugins);
+    if (stock.plugin) {
+      const pid = stock.plugin.id;
       const pdef = PLUGIN_DEFS[pid];
-      const pluginCost = 40;
       const pbtn = document.createElement('button');
-      pbtn.textContent = `${pdef.icon} ${pdef.name} (${pluginCost}金币) - ${pdef.desc}`;
-      pbtn.style.cssText = 'background:var(--bg3);border:1px solid var(--orange);color:var(--orange);';
-      if (this.run.gold < pluginCost) { pbtn.style.opacity = '0.3'; pbtn.disabled = true; }
+      pbtn.className = 'shop-card plugin';
+      pbtn.innerHTML = `<span class="shop-card-icon">${pdef.icon}</span><span class="shop-card-name">${pdef.name}</span><span class="shop-card-desc">${pdef.desc}</span><span class="shop-card-meta">插件 / ${stock.plugin.cost} 金币</span>`;
+      if (stock.plugin.sold || this.run.plugins.includes(pid)) {
+        pbtn.classList.add('sold');
+        pbtn.disabled = true;
+        pbtn.innerHTML += '<span class="shop-sold">已安装</span>';
+      } else if (this.run.gold < stock.plugin.cost) {
+        pbtn.disabled = true;
+        pbtn.classList.add('disabled');
+      }
       pbtn.addEventListener('click', () => {
-        if (this.run.gold >= pluginCost) {
-          this.run.gold -= pluginCost;
-          this.run.plugins.push(pid);
-          this.showShop();
-        }
+        if (this.run.gold < stock.plugin.cost || stock.plugin.sold || this.run.plugins.includes(pid)) return;
+        this.run.gold -= stock.plugin.cost;
+        this.run.plugins.push(pid);
+        stock.plugin.sold = true;
+        this.showShop();
       });
       choicesEl.appendChild(pbtn);
     }
 
+    const removeCost = 75;
     const removeBtn = document.createElement('button');
-    removeBtn.textContent = '移除卡牌 (75金币)';
-    removeBtn.style.cssText = 'background:var(--bg3);border:1px solid var(--red);color:var(--red);';
-    if (this.run.gold < 75) { removeBtn.style.opacity = '0.3'; removeBtn.disabled = true; }
+    removeBtn.className = 'shop-card service';
+    removeBtn.innerHTML = `<span class="shop-card-icon">🗑️</span><span class="shop-card-name">代码清理</span><span class="shop-card-desc">指定删除牌库中的1张牌。</span><span class="shop-card-meta">${removeCost} 金币</span>`;
+    if (stock.removeUsed) {
+      removeBtn.disabled = true;
+      removeBtn.classList.add('sold');
+      removeBtn.innerHTML += '<span class="shop-sold">已清理</span>';
+    } else if (this.run.gold < removeCost || this.run.deck.length <= 8) {
+      removeBtn.disabled = true;
+      removeBtn.classList.add('disabled');
+    }
     removeBtn.addEventListener('click', () => {
-      if (this.run.gold >= 75 && this.run.deck.length > 5) {
-        this.run.gold -= 75;
-        const ri = rand(0, this.run.deck.length - 1);
-        const removed = this.run.deck.splice(ri, 1)[0];
-        const rdef = CARD_DEFS[removed.defId];
-        alert(`移除了 ${rdef.name}`);
+      if (this.run.gold < removeCost || this.run.deck.length <= 8 || stock.removeUsed) return;
+      this.openDeckModal({ mode:'remove', onRemove:() => {
+        this.run.gold -= removeCost;
+        stock.removeUsed = true;
         this.showShop();
-      }
+      }});
     });
     choicesEl.appendChild(removeBtn);
 
-    const upgradeBtn = document.createElement('button');
-    upgradeBtn.textContent = '升级卡牌 (50金币) - 即将开放';
-    upgradeBtn.style.cssText = 'background:var(--bg3);border:1px solid var(--dim);color:var(--dim);opacity:0.4;';
-    upgradeBtn.disabled = true;
-    choicesEl.appendChild(upgradeBtn);
-
-    const leaveBtn = document.createElement('button');
-    leaveBtn.textContent = '离开';
-    leaveBtn.style.cssText = 'background:var(--bg3);border:1px solid var(--dim);color:var(--dim);';
-    leaveBtn.addEventListener('click', () => this.showMap());
-    choicesEl.appendChild(leaveBtn);
+    this._appendDeckViewButton(choicesEl);
+    choicesEl.appendChild(this._makeEventButton('离开', 'var(--dim)', () => {
+      choicesEl.className = '';
+      this.showMap();
+    }));
   },
 
   showTreasure() {
@@ -562,6 +712,7 @@ export const Game = {
     $('#event-desc').textContent = '你发现了一个闪闪发光的宝箱。';
     const choicesEl = $('#event-choices');
     choicesEl.innerHTML = '';
+    choicesEl.className = '';
 
     const ownedPlugins = this.run.plugins || [];
     const availPlugins = Object.keys(PLUGIN_DEFS).filter(id => !ownedPlugins.includes(id) && PLUGIN_DEFS[id].tier === 'normal');
@@ -595,11 +746,13 @@ export const Game = {
     skipBtn.style.cssText = 'background:var(--bg3);border:1px solid var(--dim);color:var(--dim);';
     skipBtn.addEventListener('click', () => this.showMap());
     choicesEl.appendChild(skipBtn);
+    this._appendDeckViewButton(choicesEl);
   },
 
   showGameOver(won) {
     this.showScreen('gameover');
-    $('#gameover-title').textContent = won ? '// 胜利!' : '// 系统崩溃';
+    $('#gameover-art').innerHTML = won ? '<div class="demo-complete-art"><span></span><span></span><span></span></div>' : '';
+    $('#gameover-title').textContent = won ? '胜利!' : '系统崩溃';
     $('#gameover-title').style.color = won ? 'var(--green)' : 'var(--red)';
     $('#gameover-stats').innerHTML = `探索节点: ${this.run.nodesVisited}<br>击败Boss: ${this.run.bossesKilled}<br>剩余HP: ${Math.max(0, this.run.hp)}<br>牌库大小: ${this.run.deck.length}`;
   },

@@ -22,6 +22,8 @@ export class BattleFxStage {
         owner.scene = this;
         owner.ready = true;
         this.enemyIcon = null;
+        this.enemyImage = null;
+        this.enemyImageKey = null;
         this.enemyCore = null;
         this.enemyRing = null;
         this.enemyGlow = null;
@@ -119,11 +121,8 @@ export class BattleFxStage {
         fontFamily: 'Arial, sans-serif',
         fontSize: '38px',
       }).setOrigin(0.5);
-      s.enemyName = s.add.text(x, y + 50, enemy.name, {
-        fontFamily: 'JetBrains Mono, monospace',
-        fontSize: '11px',
-        color: '#e6edf3',
-      }).setOrigin(0.5);
+      s.enemyImage = null;
+      s.enemyName = null;
       s.tweens.add({
         targets: [s.enemyGlow, s.enemyOrbit, s.enemyRing, s.enemyCore, s.enemyIcon],
         y: '+=5',
@@ -157,12 +156,32 @@ export class BattleFxStage {
       });
     }
 
-    s.enemyGlow.setPosition(x, y).setFillStyle(color, 0.1).setAlpha(1).setScale(1);
-    s.enemyOrbit.setPosition(x, y).setStrokeStyle(1.5, color, 0.22).setAlpha(1).setScale(1);
-    s.enemyRing.setPosition(x, y).setFillStyle(color, 0.08).setStrokeStyle(2, color, 0.4).setAlpha(1).setScale(1);
-    s.enemyCore.setPosition(x, y).setFillStyle(color, 0.18).setAlpha(1).setScale(1);
-    s.enemyIcon.setPosition(x, y).setText(enemy.icon || enemy.name[0]).setAlpha(1).setScale(1);
-    s.enemyName.setPosition(x, y + 50).setText(enemy.name).setAlpha(1).setScale(1);
+    const hasImage = Boolean(enemy.image);
+    s.enemyGlow.setPosition(x, y).setFillStyle(color, hasImage ? 0 : 0.08).setAlpha(hasImage ? 0 : 1).setScale(1);
+    s.enemyOrbit.setPosition(x, y).setStrokeStyle(1.5, color, hasImage ? 0 : 0.14).setAlpha(hasImage ? 0 : 1).setScale(1);
+    s.enemyRing.setPosition(x, y).setFillStyle(color, hasImage ? 0 : 0.05).setStrokeStyle(2, color, hasImage ? 0 : 0.24).setAlpha(hasImage ? 0 : 1).setScale(1);
+    s.enemyCore.setPosition(x, y).setFillStyle(color, hasImage ? 0 : 0.12).setAlpha(hasImage ? 0 : 1).setScale(1);
+    if (enemy.image) {
+      const key = `enemy:${enemy.image}`;
+      const applyImage = () => {
+        if (s.enemyImageKey !== key) {
+          if (s.enemyImage) s.enemyImage.destroy();
+          s.enemyImage = s.add.image(x, y, key).setOrigin(0.5);
+          s.enemyImageKey = key;
+        }
+        const maxW = Math.min(230, w * 0.56);
+        const maxH = Math.min(230, s.scale.height * 0.82);
+        const tex = s.textures.get(key).getSourceImage();
+        const scale = Math.min(maxW / tex.width, maxH / tex.height);
+        s.enemyImage.setPosition(x, y).setScale(scale).setAlpha(1).setDepth(5);
+        s.enemyIcon.setAlpha(0);
+      };
+      if (s.textures.exists(key)) applyImage();
+      else s.load.image(key, enemy.image), s.load.once(`filecomplete-image-${key}`, applyImage), s.load.start();
+    } else {
+      if (s.enemyImage) s.enemyImage.setAlpha(0);
+      s.enemyIcon.setPosition(x, y).setText(enemy.icon || enemy.name[0]).setAlpha(1).setScale(1);
+    }
   }
 
   playAttack(kind = 'attack') {
@@ -302,7 +321,7 @@ export class BattleFxStage {
     const s = this.scene;
     if (s.enemyIcon) {
       s.tweens.add({
-        targets: [s.enemyIcon, s.enemyCore, s.enemyRing, s.enemyGlow, s.enemyOrbit, s.enemyName],
+        targets: [s.enemyIcon, s.enemyCore, s.enemyRing, s.enemyGlow, s.enemyOrbit].filter(Boolean),
         scale: 1.35,
         alpha: 0,
         duration: 420,

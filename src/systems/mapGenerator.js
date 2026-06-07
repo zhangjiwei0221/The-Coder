@@ -40,12 +40,6 @@ export const MapGenerator = {
       columns.push(column);
     }
 
-    if (floor === 0 && columns[0]?.[0]) {
-      columns[0][0].type = 'battle';
-      columns[0][0].icon = '🐛';
-      columns[0][0].label = '教学';
-    }
-
     this._injectSpecialNodes(columns, floor, numCols);
     this._connectColumns(columns);
 
@@ -210,17 +204,22 @@ export const MapGenerator = {
 
   getEnemyForNode(node, floor) {
     if (node.type === 'boss') return ENEMIES[['syntaxerr', 'firewall', 'root'][floor] || 'root'];
-    if (node.label === '教学') return ENEMIES.bug;
     if (node.type === 'elite') {
       const elites = [
-        ['nullptr', 'chaser', 'todo'],
+        ['ddl', 'chaser', 'todo'],
         ['recursion', 'deadlock', 'stackoverflow'],
         ['deadlock', 'racecond', 'gc'],
       ];
       return ENEMIES[pick(elites[floor] || elites[0])];
     }
+    if (floor === 0) {
+      const col = Number(String(node.id).match(/-c(\d+)-/)?.[1] || 0);
+      if (col <= 1) return ENEMIES[pick(['bug', 'error'])];
+      if (col <= 3) return ENEMIES[pick(['bug', 'error', 'loop'])];
+      return ENEMIES[pick(['bug', 'error', 'loop', 'branch'])];
+    }
     const regular = [
-      ['bug', 'typo', 'redpoint'],
+      ['bug', 'error', 'loop', 'branch'],
       ['infloop', 'memleak', 'racecond', 'gc'],
       ['stackoverflow', 'recursion', 'deadlock'],
     ];

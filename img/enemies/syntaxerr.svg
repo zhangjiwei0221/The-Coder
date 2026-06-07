@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="robe" x1="160" y1="92" x2="352" y2="430" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ff7a7a"/>
+      <stop offset=".48" stop-color="#d9364e"/>
+      <stop offset="1" stop-color="#7f2443"/>
+    </linearGradient>
+    <linearGradient id="visor" x1="176" y1="164" x2="336" y2="286" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#171e32"/>
+      <stop offset="1" stop-color="#080b14"/>
+    </linearGradient>
+    <filter id="redGlow" x="-28%" y="-28%" width="156%" height="156%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feColorMatrix in="blur" values="1 0 0 0 .95 0 .18 0 0 .08 0 0 .14 0 .18 0 0 0 .8 0"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <g filter="url(#redGlow)">
+    <path d="M256 64c70 0 128 46 128 110 0 26-10 50-27 69 45 38 72 92 72 150 0 30-77 54-173 54S83 423 83 393c0-58 27-112 72-150-17-19-27-43-27-69 0-64 58-110 128-110Z" fill="url(#robe)"/>
+    <path d="M161 163c0-42 42-75 95-75s95 33 95 75v89c0 52-43 95-95 95s-95-43-95-95v-89Z" fill="#2b1830" opacity=".32"/>
+    <path d="M171 174c0-23 19-42 42-42h86c23 0 42 19 42 42v70c0 23-19 42-42 42h-86c-23 0-42-19-42-42v-70Z" fill="url(#visor)" stroke="#ffb0b0" stroke-width="8"/>
+    <path d="M205 204l32 32M237 204l-32 32M276 205h42M276 235h58" stroke="#ff4f64" stroke-width="13" stroke-linecap="round"/>
+    <path d="M143 303c-36 18-62 48-74 84M369 303c36 18 62 48 74 84" stroke="#ff6470" stroke-width="20" stroke-linecap="round"/>
+    <path d="M176 390l-26 48M336 390l26 48" stroke="#a92c4c" stroke-width="22" stroke-linecap="round"/>
+    <path d="M123 99l-49-28M389 99l49-28" stroke="#ff4f64" stroke-width="18" stroke-linecap="round"/>
+    <path d="M208 352c26 18 70 18 96 0" stroke="#ffc1c1" stroke-width="10" stroke-linecap="round" opacity=".82"/>
+  </g>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" opacity=".9">
+    <path d="M82 154h56M374 154h56M74 227h64M374 227h64" stroke="#ff4f64" stroke-width="9"/>
+    <path d="M111 119l38 26M401 119l-38 26" stroke="#58a6ff" stroke-width="8"/>
+    <path d="M230 58h52" stroke="#ffc1c1" stroke-width="12"/>
+  </g>
+</svg>
